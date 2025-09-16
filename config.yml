@@ -1,0 +1,50 @@
+project:
+  dataset: favorita
+  horizon_days: 14            # forecast D+1..D+14
+paths:
+  raw: data/raw
+  processed: data/processed
+  models: models
+  reports: reports
+
+columns:                      # map Favorita → our schema
+  date: date
+  store_id: store_nbr
+  sku_id: item_nbr
+  qty: unit_sales
+  is_promo: onpromotion
+
+joins:                        # extra signals to include
+  transactions: true
+  oil: true
+  holidays: true
+
+features:                     # leakage-safe toggles
+  calendar: [dow, is_weekend, month, is_month_end]
+  lags: [1, 7, 14]
+  rolls: [7, 28]
+  exp_decay_halflife: 7
+  promo: true
+  price: false                # Favorita has no price column
+  transactions: true
+  oil: true
+  holidays: true
+
+model:                        # two-stage LightGBM
+  type: two_stage_lgbm
+  occurrence:
+    params: { n_estimators: 600, learning_rate: 0.05, num_leaves: 127, subsample: 0.9, colsample_bytree: 0.9 }
+  size:
+    objective: tweedie
+    tweedie_variance_power: 1.2
+    params: { n_estimators: 900, learning_rate: 0.045, num_leaves: 255, subsample: 0.9, colsample_bytree: 0.9, reg_alpha: 1.0, reg_lambda: 2.0 }
+
+cv:
+  folds: 4
+  holdout_days: 14
+  min_train_days: 150
+
+evaluation:
+  metrics: [wape, smape, bias]
+  bias_range: [-0.03, 0.03]
+  abc_split: { A: 0.2, B: 0.5 }   # top 20% volume = A, next 30% = B
